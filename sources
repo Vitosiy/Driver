@@ -1,0 +1,13 @@
+TARGETNAME=Driver
+TARGETTYPE=DRIVER
+#DRIVERTYPE=WDM
+TARGETPATH=obj
+SOURCES=init.c \
+	hookidt.c \
+	dump.c \
+	hooksysenter.c \
+	wrmem.c 
+#	exptable.c
+
+# TARGETLIBS=
+# INCLUDE=
