@@ -11,6 +11,9 @@
   push edi
    ---------PUSHAD-OPERATION */
 
+
+//В начале лежит индекс, а за ним eax оригинальный, а после оригинальный стэк
+
 __declspec(naked) void InterruptHook() {
 	PIDT_CONTEXT currentContext;
 	ULONG realAddr;
@@ -132,7 +135,7 @@ void InitializateContextList() {
 	ULONG i;
 	ExInitializePagedLookasideList(&pagedContext, NULL, NULL, 0, sizeof(IDT_CONTEXT), ' LFO', 0);
 	for (i = 0; i < 0x100; ++i) {
-		context[i].found = 0; // dolbaeb?
+		context[i].found = 0;
 	}
 	return;
 }

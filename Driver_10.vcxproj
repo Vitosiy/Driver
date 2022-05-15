@@ -13,7 +13,7 @@
   <PropertyGroup Label="Globals">
     <ProjectName>Driver</ProjectName>
     <ProjectGuid>{107DE65D-4EC4-4383-BC8D-AEB05D37F706}</ProjectGuid>
-    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>7.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Checked|Win32'" Label="Configuration">

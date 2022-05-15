@@ -267,6 +267,7 @@ void CallHookInt(PCHAR codeChar) {
     }
     DbgPrint("ERROR HOOK");
 }
+
 void CallInfoInt(PCHAR buffer) {
     ULONG i;
     ULONG info = 0;
@@ -538,6 +539,7 @@ __declspec(naked) void CallGateHook() {
     }
 
 }
+
 __declspec(naked) void CallGateInfo() {
 
     //__asm {int 3}
@@ -608,298 +610,26 @@ PLIST_ENTRY pLink;
     }
 
     switch (ioctl) {
-    case INSERT_IDT_IOCTL:
-        InsertTrapGate(0x65, TrapGateHandler);
-        break;
+        case START_HOOKING_SYSENTER:
+            DbgPrint("STARTING HOOKING SYSENTER\n");
+            HookSysenter((ULONG)HandlerSysenter, &glRealAddressSysenter);
+            DbgPrint("Handler sysenter\told=%p  new=%p\n", glRealAddressSysenter, HandlerSysenter);
+            RtlCopyMemory(out, "OK", strlen("OK"));
+            break;
 
-    case HOOK_IDT_IOCTL:
-        if (inlen) {
-            DbgPrint("%s\n", in);
-            status = RtlCharToInteger(in, (ULONG)NULL, &value);
-            if (!NT_SUCCESS(status) || value > 0xff) {
-                status = STATUS_INVALID_PARAMETER;
-                break;
-            }
-            DbgPrint("%d\n", value);
-            HookInterrupt(value);
-        }
-        break;
+        case STOP_HOOKING_SYSENTER:
+            DbgPrint("STOPING HOOKING SYSENTER\n");
+            HookSysenter(glRealAddressSysenter, &i);
+            RtlCopyMemory(out, "OK", strlen("OK"));
+            break;
 
-    case TEST_IOCTL: {
-        if (inlen == sizeof(PHYMEM_MEM)) {
-            PVOID map = NULL;
-            PPHYMEM_MEM pPhyMem = (PPHYMEM_MEM)in;
-
-            
-            MapPhyMem(pPhyMem, &map, UserMode, MmNonCached);
-            //if kernel mode
-            //PrintMapDWORD(map, pPhyMem->size, 0);
-            //PrintMapBYTE(map, pPhyMem->size, 0);
-
-            
-            RtlCopyMemory(out, &map, sizeof(PVOID));
-            Info = pPhyMem->size;
-        }
-        break;
-    }
-    case IOCTL_PHYMEM_MAP: {
-        if (inlen == sizeof(PHYMEM_MEM)) {
-            PVOID map;
-            PPHYMEM_MEM pPhyMem = (PPHYMEM_MEM)in;
-            MapPhyMem(pPhyMem, &map, UserMode, MmNonCached);
-            //PrintMapDWORD(map, pPhyMem->size, 0);
-            //PrintMapBYTE(map, pPhyMem->size, 0);
-            RtlCopyMemory(out, &map, sizeof(PVOID));
-            Info = pPhyMem->size;
-        }
-        break;
-    }
-    case IOCTL_PHYMEM_UNMAP: {
-        if (inlen == sizeof(PHYMEM_MEM)) {
-            PPHYMEM_MEM pPhyMem = (PPHYMEM_MEM)in;
-            MapPhyMemFree(pPhyMem);
-        }
-        break;
-    }
-    case DUMP_IDT:
-        buf = (PCHAR)ExAllocatePoolWithTag(PagedPool, outlen, 'oneN');
-        DbgPrint("DUMPING IDT\n");
-
-        if (buf) {
-            if (!DUMP_IDT_HANDLER(buf, &Info)) {
-                DbgPrint("FAILED TO DUMP MEM");
-                return CompleteIrp(pIrp, STATUS_UNSUCCESSFUL, Info);
-            }
-            RtlCopyMemory(out, buf, Info);
-            ExFreePool(buf);
-        }
-        else {
-            DbgPrint("FAILED TO ALLOCATE MEM");
-            return CompleteIrp(pIrp, STATUS_UNSUCCESSFUL, Info);
-        }
-        break;
-
-    case DUMP_GDT:
-        buf = (char*)ExAllocatePoolWithTag(PagedPool, outlen, 'oneN');
-        DbgPrint("DUMPING GDT\n");
-
-        if (buf) {
-            if (!DUMP_GDT_HANDLER(buf, &Info)) {
-                DbgPrint("FAILED TO DUMP MEM");
-                return CompleteIrp(pIrp, STATUS_UNSUCCESSFUL, Info);
-            }
-            RtlCopyMemory(out, buf, Info);
-            ExFreePool(buf);
-        }
-        else {
-            DbgPrint("FAILED TO ALLOCATE MEM");
-            return CompleteIrp(pIrp, STATUS_UNSUCCESSFUL, Info);
-        }
-        break;
-
-    case START_HOOKING_SYSENTER:
-        DbgPrint("STARTING HOOKING SYSENTER\n");
-        HookSysenter((ULONG)HandlerSysenter, &glRealAddressSysenter);
-        DbgPrint("Handler sysenter\told=%p  new=%p\n", glRealAddressSysenter, HandlerSysenter);
-        RtlCopyMemory(out, "OK", strlen("OK"));
-        break;
-
-    case STOP_HOOKING_SYSENTER:
-        DbgPrint("STOPING HOOKING SYSENTER\n");
-        HookSysenter(glRealAddressSysenter, &i);
-        RtlCopyMemory(out, "OK", strlen("OK"));
-        break;
-
-    case SYSCALL_CNT_INFO_IOCTL:
-        Info += sprintf(out + Info, "Current coutner value: %d\n", glNumberSysServices);
-        //DbgPrint("Current coutner value: %d\n", glNumberSysServices);
-        Info += sprintf(out + Info, "Last: %d\n", glLastSC);
-        //DbgPrint("Last: %d\n", glLastSC);
-        for (i = 0; i < glNumberSysServices; ++i) {
-            Info += sprintf(out + Info, "%d: %u\n", i, glSyscallEaxs[i]);
-            //DbgPrint("%d: %u\n", i, glSyscallEaxs[i]);
-        }
-        break;
-
-    case SYSCALL_ALL_INFO_IOCTL:
-        DbgPrint("SYSCALL_ALL_INFO_IOCTL\n");
-        DbgPrint("%s\n", in);
-        status = RtlCharToInteger(in, (ULONG)NULL, &value);
-        if (!NT_SUCCESS(status)) {
+        default:
             status = STATUS_INVALID_PARAMETER;
             break;
-        } else if (value) {
-            for (i = 0; i < glNumberSysServices; ++i) {
-                count = 0;
-                if (pContextSyscalls[i].b) {
-                    for (pLink = pContextSyscalls[i].link.Flink; pLink != &pContextSyscalls[i].link && count < value; pLink = pLink->Flink) {
-                        PCONTEXT_SYSCALL entry = CONTAINING_RECORD(pLink, CONTEXT_SYSCALL, link);
-                        Info += sprintf(out + Info, "Index:%d", entry->index);
-                        if (pContextSyscalls[i].argBuffer.size) {
-                            Info += sprintf(out + Info, " Args:\t");
-                            for (j = 0; j < entry->argBuffer.size / sizeof(ULONG); ++j) {
-                                Info += sprintf(out + Info, "[%d]:0x%X ", j, entry->argBuffer.buffer[j]);
-                            }
-                        }
-                        Info += sprintf(out + Info, "\tStack:0x%X\n", (ULONG)entry->userStack);
-                        pLink = pLink->Flink;
-                        count++;
-                    }
-                }
-            }
-        }
-        break;
-
-    case SYSCALL_IND_INFO_IOCTL:
-        DbgPrint("SYSCALL_IND_INFO_IOCTL\n");
-        status = RtlCharToInteger(in, (ULONG)NULL, &value);
-
-        DbgPrint("%s %d\n", in, value);
-        if (!NT_SUCCESS(status) || value > glNumberSysServices) {
-            status = STATUS_INVALID_PARAMETER;
-            break;
-        }
-        else if (pContextSyscalls[value].b) {
-            PCONTEXT_SYSCALL entry = CONTAINING_RECORD(&pContextSyscalls[value].link, CONTEXT_SYSCALL, link);
-            Info += sprintf(out + Info, "Index:%d~0x%X\t", entry->index, entry->index);
-            DbgPrint("Index:%d~0x%X", entry->index, entry->index);
-            if (entry->argBuffer.size) {
-                Info += sprintf(out + Info, "\tArgs: ");
-                DbgPrint("\tArgs: ");
-                for (j = 0; j < entry->argBuffer.size / sizeof(ULONG); ++j) {
-                    Info += sprintf(out + Info, "[%d]:0x%X ", j, entry->argBuffer.buffer[j]);
-                    DbgPrint("[%d]:0x%X ", j, entry->argBuffer.buffer[j]);
-                }
-            }
-            Info += sprintf(out + Info, "\tStack:0x%X\n", (ULONG)entry->userStack);
-        }
-        else {
-            Info = sprintf(out, "Empty syscall context\n");
-        }
-        break;
-
-    case READ_WO_PAE:
-        break;
-    //{
-    //    PREAD_DATA rd = (PREAD_DATA)ExAllocatePoolWithTag(NonPagedPool, sizeof(READ_DATA), 'oneN');
-    //    DbgPrint("READ_WO_PAE\n");
-
-    //    if (rd) {
-    //        RtlCopyMemory(rd, in, inlen);
-    //    }
-    //    else {
-    //        DbgPrint("Failed on memory allocation\n");
-    //        return CompleteIrp(pIrp, STATUS_UNSUCCESSFUL, Info);
-    //    }
-
-    //    READ_WO_PAE_HANDLER(rd->buffer, rd->where, rd->len);
-    //    RtlCopyMemory(out, rd->buffer, rd->len);
-    //    break;
-    //}
-
-    case READ_W_PAE:
-        break;
-    //{
-    //    PREAD_DATA rd = (PREAD_DATA)ExAllocatePoolWithTag(NonPagedPool, sizeof(READ_DATA), 'oneN');
-    //    DbgPrint("READ_W_PAE\n");
-
-    //    if (rd) {
-    //        RtlCopyMemory(rd, in, inlen);
-    //    }
-    //    else {
-    //        DbgPrint("Failed on memory allocation\n");
-    //        return CompleteIrp(pIrp, STATUS_UNSUCCESSFUL, Info);
-    //    }
-
-    //    READ_W_PAE_HANDLER(rd->buffer, rd->where, rd->len);
-    //    RtlCopyMemory(out, rd->buffer, rd->len);
-    //    break;
-    //}
-    case IN_PORT_IOCTL: {
-        int address = 0;
-        int max_address = 0;
-        int i = 0;
-        buf = out;
-        DbgPrint("INPUT_PORT\n");
-        RtlCopyMemory(&address, in, 4);
-        max_address = address + 64000;
-        for (i = address; i < max_address; i++) {
-            __asm {
-                push eax
-                push ebx
-                push edx
-
-                xor ecx, ecx
-                mov eax, i
-                mov ebx, buf
-                add ebx, eax
-                mov eax, address
-                in al, dx
-                mov byte ptr[ebx], al
-
-                pop edx
-                pop ebx
-                pop eax
-            }
-        }
-        break;
     }
-    case OUT_PORT_IOCTL: {
-        int address = 0;
-        int max_address = 0;
-        int i = 0;
-        buf = out;
-        DbgPrint("OUTPUT_PORT\n");
-        RtlCopyMemory(&address, in, 4);
-        max_address = address + 64000;
-        for (i = address; i < max_address; i++) {
-            __asm {
-                push eax
-                push ebx
-                push edx
-
-                xor ecx, ecx
-                mov eax, i
-                mov ebx, buf
-                add ebx, eax
-                mov eax, address
-                out dx, al
-                mov byte ptr[ebx], al
-
-                pop edx
-                pop ebx
-                pop eax
-            }
-        }
-        break;
-    }
-    case OUT_REGIDT_IOCTL:
-        PrintListContext();
-        break;
-
-    default:
-        status = STATUS_INVALID_PARAMETER;
-        break;
-
-    }
-
 
     return CompleteIrp(pIrp, status, Info);
 }
-
-
-
-
-BOOLEAN DUMP_IDT_HANDLER(unsigned char* outbuffer, int* exact_bytes_wrote) {
-    *exact_bytes_wrote = ShowIDT(outbuffer, 0);
-    return TRUE;
-}
-
-BOOLEAN DUMP_GDT_HANDLER(unsigned char* outbuffer, int* exact_bytes_wrote) {
-    *exact_bytes_wrote = ShowGDT(outbuffer, 0);
-    return TRUE;
-}
-
 
 
 NTSTATUS DispatchRead(IN PDEVICE_OBJECT pDeviceObject, IN PIRP pIrp) {
@@ -1231,9 +961,11 @@ BOOLEAN HookSyscall(
     backup->Limit = table->Limit;
     backup->Base = table->Base;
     backup->Number = table->Number;
-    if (!ChangeSyscallTable(table, index - backup->Limit + 1)) {
-        DbgPrint("Error change table syscall");
-        return STATUS_UNSUCCESSFUL;
+    if (index > backup->Limit + 1) {
+        if (!ChangeSyscallTable(table, index - backup->Limit + 1)) {
+            DbgPrint("Error change table syscall");
+            return STATUS_UNSUCCESSFUL;
+        }
     }
     table->Base[index] = (ULONG_PTR)addressHooker;
     table->Number[index] = param;

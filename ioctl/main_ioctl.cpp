@@ -272,7 +272,8 @@ int main(int argc, char* argv[]) {
 		}
 		printf(buffer);
 
-	} else if (!strcmp(argv[1], "findstr")) {
+	} 
+	else if (!strcmp(argv[1], "findstr")) {
 		if (argc > 2) {
 			PCHAR strinrng[] = {"qwertty"};
 			ULONG i, j ,k;
@@ -358,7 +359,8 @@ int main(int argc, char* argv[]) {
 			}
 
 		}
-	} else if (!strcmp(argv[1], "rdmem")) {
+	} 
+	else if (!strcmp(argv[1], "rdmem")) {
 		if (argc == 5) {
 			PVOID address = NULL;
 			ULONG mem = (ULONG)strtoul(argv[2], NULL, 0);
@@ -405,7 +407,8 @@ int main(int argc, char* argv[]) {
 			}
 			address = NULL;
 		}
-	} else if (!strcmp(argv[1], "wrmem")) {
+	} 
+	else if (!strcmp(argv[1], "wrmem")) {
 		if (argc > 2) {
 			ULONG address = (ULONG)strtol(argv[2], NULL, 0);
 			strncpy(buffer, argv[3], strlen(argv[3]));
