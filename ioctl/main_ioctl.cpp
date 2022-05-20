@@ -52,68 +52,95 @@ int main(int argc, char* argv[]) {
 		return 0;
 	}
 
-	if (!strcmp(argv[1], "in65")) {	//тестовое создание собственного шлюза в 65-ое прерывание
-		if (!DeviceIoControl(file, INSERT_IDT_IOCTL,
-			buffer, buffSize,
-			out, 0xFFFF,
-			&bytesReturned, NULL)) {
-			printf("Error write in IDT");
+	if (!strcmp(argv[1], "dumpgdt")) {		//syscall 0x0215
+		__asm {
+			push buffSize
+			push buffer
+			mov eax, 0x0215
 		}
+		AddressSystemCall = (unsigned int)FastSystemCall;
+		SysCall();
+		printf(buffer);
 	}
-	else if (!strcmp(argv[1], "hookintold")) {	//старый способ перехвата прерываний
-
+	else if (!strcmp(argv[1], "dumpidt")) {		 //syscall 0x11fd
+		__asm {
+			push buffSize
+			push buffer
+			mov eax, 0x11fd
+		}
+		AddressSystemCall = (unsigned int)FastSystemCall;
+		SysCall();
+		printf(buffer);
+	}
+	else if (!strcmp(argv[1], "hook_count_int")) {		//syscall 0x2021
 		if (argc > 2) {
-			strncpy(buffer, argv[2], buffSize);
-
-			if (!DeviceIoControl(file, HOOK_IDT_IOCTL,
-				buffer, buffSize,
-				out, 0xFFFF,
-				&bytesReturned, NULL)) {
-				printf("Error hook");
+			char* code = argv[2];
+			int* size = (int*)out;
+			size[0] = 0xFFFF;
+			__asm {
+				push code
+				mov eax, 0x2021
 			}
+			AddressSystemCall = (unsigned int)FastSystemCall;
+			SysCall();
+			printf(out);
 		}
-
 	}
-	else if (!strcmp(argv[1], "int65")) {	//тестовый вызов 65го прерывания
+	else if (!strcmp(argv[1], "hook_count_info")) {		//syscall 0x3009
+		int* size = (int*)out;
+		size[0] = 0xFFFF;
 		__asm {
-			mov eax, 0x1
-			mov ecx, 0x2
-			mov edx, 0xa
-			mov ebx, 0xff
-		}
-		__asm int 0x65
-	}
-	else if (!strcmp(argv[1], "int3")) {
-		__asm int 3
-
-	}
-	else if (!strcmp(argv[1], "listold")) {			//нахуй вырезать
-		if (!DeviceIoControl(file, OUT_REGIDT_IOCTL,
-			buffer, buffSize,
-			out, 0xFFFF,
-			&bytesReturned, NULL)) {
-			printf("error list");
-		}
-	}
-	else if (!strcmp(argv[1], "dumpgdt")) { //syscall 0x2006
-		__asm {
-			push buffSize
 			push buffer
-			mov eax, 0x2006
+			mov eax, 0x3009
 		}
 		AddressSystemCall = (unsigned int)FastSystemCall;
 		SysCall();
 		printf(buffer);
 	}
-	else if (!strcmp(argv[1], "dumpidt")) { //syscall 0x3013
-		__asm {
-			push buffSize
-			push buffer
-			mov eax, 0x3013
+	else if (!strcmp(argv[1], "hook_int")) {
+		if (argc > 2) {
+			char* code = argv[2];
+			int* size = (int*)out;
+			size[0] = 0xFFFF;
+			__asm {
+				push eax
+				mov eax, code
+				//call 0x9B:0x44332211		19*8 + 3		19 запись (по 8 байт) + бит DPL
+				_emit 0x9a // opcode
+				_emit 0x11
+				_emit 0x22
+				_emit 0x33
+				_emit 0x44
+				_emit 0xF3 //selector	// 0x9B
+				_emit 0x03				// 0x00
+				pop eax
+				mov ax, 3bh
+				mov fs, ax
+			}
+			printf(out);
 		}
-		AddressSystemCall = (unsigned int)FastSystemCall;
-		SysCall();
+
+	}
+	else if (!strcmp(argv[1], "hook_info")) {
+		int* size = (int*)out;
+		size[0] = 0xFFFF;
+		__asm {
+			push eax
+			mov eax, buffer
+			//call 0x3fb:0x44332211		19*8 + 3		19 запись (по 8 байт) + бит DPL
+			_emit 0x9a // opcode
+			_emit 0x11
+			_emit 0x22
+			_emit 0x33
+			_emit 0x44
+			_emit 0xFB //selector
+			_emit 0x03
+			pop eax
+			mov ax, 3bh
+			mov fs, ax
+		}
 		printf(buffer);
+
 	}
 	else if (!strcmp(argv[1], "in")) { //syscall 0x1fa
 
@@ -158,24 +185,6 @@ int main(int argc, char* argv[]) {
 			SysCall();
 			printf(buffer);
 		}
-	}
-	else if (!strcmp(argv[1], "dgdtold")) { //выпилить
-		if (!DeviceIoControl(file, DUMP_GDT,
-			buffer, buffSize,
-			out, 0xFFFF,
-			&bytesReturned, NULL)) {
-			printf("error list");
-		}
-		printf(out);
-	}
-	else if (!strcmp(argv[1], "didtold")) {	//выпилить
-		if (!DeviceIoControl(file, DUMP_IDT,
-			buffer, buffSize,
-			out, 0xFFFF,
-			&bytesReturned, NULL)) {
-			printf("error list");
-		}
-		printf(out);
 	}
 	else if (!strcmp(argv[1], "hooksysent")) {
 		if (!DeviceIoControl(file, START_HOOKING_SYSENTER,
@@ -228,51 +237,6 @@ int main(int argc, char* argv[]) {
 		}
 		printf(out);
 	}
-	else if (!strcmp(argv[1], "hook_int")) {
-		if (argc > 2) {
-			char* code = argv[2];
-			int* size = (int*)out;
-			size[0] = 0xFFFF;
-			__asm {
-				push eax
-				mov eax, code
-				//call 0x9B:0x44332211		19*8 + 3		19 запись (по 8 байт) + бит DPL
-				_emit 0x9a // opcode
-				_emit 0x11
-				_emit 0x22
-				_emit 0x33
-				_emit 0x44
-				_emit 0xF3 //selector	// 0x9B
-				_emit 0x03				// 0x00
-				pop eax
-				mov ax, 3bh
-				mov fs, ax
-			}
-			printf(out);
-		}
-
-	}
-	else if (!strcmp(argv[1], "hook_info")) {
-		int* size = (int*)out;
-		size[0] = 0xFFFF;
-		__asm {
-			push eax
-			mov eax, buffer
-			//call 0x3fb:0x44332211		19*8 + 3		19 запись (по 8 байт) + бит DPL
-			_emit 0x9a // opcode
-			_emit 0x11
-			_emit 0x22
-			_emit 0x33
-			_emit 0x44
-			_emit 0xFB //selector
-			_emit 0x03
-			pop eax
-			mov ax, 3bh
-			mov fs, ax
-		}
-		printf(buffer);
-
-	} 
 	else if (!strcmp(argv[1], "findstr")) {
 		if (argc > 2) {
 			PCHAR strinrng[] = {"qwertty"};
