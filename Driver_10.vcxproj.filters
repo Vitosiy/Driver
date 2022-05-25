@@ -30,9 +30,6 @@
     <ClCompile Include="wrmem.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="exptable.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="sources" />
@@ -59,7 +56,10 @@
     <ClInclude Include="pt.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="exptable.h">
+    <ClInclude Include="init.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="command.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

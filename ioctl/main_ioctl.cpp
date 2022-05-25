@@ -6,6 +6,8 @@
 #include "..\pt.h"
 
 #define sysenter __asm _emit 0x0F __asm _emit 0x34
+#define SYSCALL_SIGNATURE 0x00ABBA00
+
 
 void PrintMapDWORD(PVOID map, ULONG size, ULONG offset);
 void PrintMapBYTE(PVOID map, ULONG size, ULONG offset);
@@ -51,8 +53,24 @@ int main(int argc, char* argv[]) {
 		printf("Driver dos`t loaded!");
 		return 0;
 	}
+	LoadLibraryW(L"user32.dll");
+	LoadLibraryW(L"gdi32.dll");
+	if (!strcmp(argv[1], "init_dump")) {
+		__asm {
+			push edx
+			push eax
 
-	if (!strcmp(argv[1], "dumpgdt")) {		//syscall 0x0215
+			mov edx, esp
+			int 0x75
+			add esp, 8
+			mov ax, 3bh
+			mov fs, ax
+
+			pop eax
+			pop edx
+		}
+	}
+	else if (!strcmp(argv[1], "dumpgdt")) {		//syscall 0x0215
 		__asm {
 			push buffSize
 			push buffer
@@ -62,11 +80,14 @@ int main(int argc, char* argv[]) {
 		SysCall();
 		printf(buffer);
 	}
-	else if (!strcmp(argv[1], "dumpidt")) {		 //syscall 0x11fd
+	else if (!strcmp(argv[1], "dumpidt")) {		 //syscall 0x11df
 		__asm {
+			push 0
+			push 0
 			push buffSize
 			push buffer
-			mov eax, 0x11fd
+			push SYSCALL_SIGNATURE
+			mov eax, 0x11df
 		}
 		AddressSystemCall = (unsigned int)FastSystemCall;
 		SysCall();

@@ -1,84 +1,4 @@
-#include <ntddk.h>
-#include <stdio.h>
-#include "intel.h"
-#include "ioctl.h"
-#include "hookidt.h"
-#include "dump.h"
-#include "hooksysenter.h"
-#include "wrmem.h"
-#include "pt.h"
-//#include "exptable.h"
-
-#define	SYM_LINK_NAME   L"\\Global??\\Driver"
-#define DEVICE_NAME     L"\\Device\\DDriver"
-
-#define HOOK_STRING     L"\\hook"
-#define INFO_STRING     L"\\info"
-
-UNICODE_STRING  DevName;
-UNICODE_STRING	SymLinkName;
-
-//*************************************************************
-// предварительное объявление функций
-
-
-DRIVER_INITIALIZE DriverEntry;
-DRIVER_UNLOAD DriverUnload;
-
-
-NTSTATUS DispatchCreate(IN PDEVICE_OBJECT DeviceObject, IN PIRP pIrp);
-NTSTATUS DispatchClose(IN PDEVICE_OBJECT DeviceObject, IN PIRP pIrp);
-NTSTATUS DispatchControl(IN PDEVICE_OBJECT DeviceObject, IN PIRP pIrp);
-NTSTATUS DispatchRead(IN PDEVICE_OBJECT pDeviceObject, IN PIRP pIrp);
-NTSTATUS DispatchWrite(IN PDEVICE_OBJECT pDeviceObject, IN PIRP pIrp);
-NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status, ULONG Info);
-
-VOID InsertCallGate(ULONG index, PVOID handler);
-void CallGateHook();
-void CallGateInfo();
-VOID InsertTrapGate(ULONG index, PVOID handler);
-void TrapGateHandler();
-
-void FreeMapHandler();
-void WriteMemHandler();
-void ReadMemHandler();
-
-BOOLEAN HookSyscall(PKSERVICE_TABLE_DESCRIPTOR table, PVOID addressHooker, ULONG index, UCHAR param, PKSERVICE_TABLE_DESCRIPTOR backup);
-BOOLEAN ChangeSyscallTable(PKSERVICE_TABLE_DESCRIPTOR table, ULONG extra);
-void InPortSyscall(USHORT port, PCHAR buffer, ULONG sz);
-void OutPortSyscall(USHORT port, PCHAR buffer, ULONG sz);
-void DumpGdtSysCall(PCHAR buffer, ULONG size);
-void DumpIdtSysCall(PCHAR buffer, ULONG size);
-void CallHookInt(PCHAR codeChar);
-void CallInfoInt(PCHAR buffer);
-void RollbackChangeSyscallTable(PKSERVICE_TABLE_DESCRIPTOR table, PULONG_PTR old_base, PUCHAR old_param, ULONG limit);
-void CreateOverIndexGDT(ULONG index);
-void PrintSSDT(PKSERVICE_TABLE_DESCRIPTOR table, PCHAR str);
-ULONG ClearWP(void);
-void WriteCR0(ULONG reg);
-void test();
-
-typedef ULONG_PTR (*NT_USER_SET_INFORMATION_PROCESS)(
-    ULONG_PTR	arg_01,
-    ULONG_PTR	arg_02,
-    ULONG_PTR	arg_03,
-    ULONG_PTR	arg_04
-);
-
-NT_USER_SET_INFORMATION_PROCESS glRealNtUserSetInformationProcess;
-
-ULONG_PTR __stdcall HookNtUserSetInformationProcess(
-    ULONG_PTR	arg_01,
-    ULONG_PTR	arg_02,
-    ULONG_PTR	arg_03,
-    ULONG_PTR	arg_04
-);
-
-//*************************************************************
-// глобальные переменные
-
-KSERVICE_TABLE_DESCRIPTOR backupTable[4];
-KSERVICE_TABLE_DESCRIPTOR backupTableShadow[4];
+#include "init.h"
 
 // функция инициализации драйвера
 NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING RegistryPath) {
@@ -89,7 +9,8 @@ PDEVICE_OBJECT  DeviceObject;
 //ULONG uImageBase;
 ULONG reg;
 ULONG i;
-
+    
+    //Interface: 1
     DriverObject->MajorFunction[IRP_MJ_CREATE] = DispatchCreate;
     DriverObject->MajorFunction[IRP_MJ_READ] = DispatchRead;
     DriverObject->MajorFunction[IRP_MJ_WRITE] = DispatchWrite;
@@ -134,9 +55,11 @@ ULONG i;
 
     __asm int 3;
 
+    InsertTrapGate(0x75, DumpInitHandler);
+
     // for syscall 0x0215
     //HookSyscall(&KeServiceDescriptorTable[0], DumpGdtSysCall, 0x215, sizeof(PCHAR) + sizeof(ULONG), &backupTable[0]);
-    //(&KeServiceDescriptorTableShadow[0], DumpGdtSysCall, 0x215, sizeof(PCHAR) + sizeof(ULONG), &backupTableShadow[0]);
+    //HookSyscall(&KeServiceDescriptorTableShadow[0], DumpGdtSysCall, 0x215, sizeof(PCHAR) + sizeof(ULONG), &backupTableShadow[0]);
  
     // for syscall 0x11fd
     //HookSyscall(&KeServiceDescriptorTableShadow[1], DumpIdtSysCall, 0x1fd, sizeof(PCHAR) + sizeof(ULONG), &backupTableShadow[1]);
@@ -163,20 +86,20 @@ ULONG i;
 
     //****************************init w/r mem      Interface: 1
 
-    InitWRMem();
+    /*InitWRMem();
     InsertTrapGate(0x75, FreeMapHandler);
     InsertTrapGate(0x76, ReadMemHandler);
-    InsertTrapGate(0x77, WriteMemHandler);
+    InsertTrapGate(0x77, WriteMemHandler);*/
 
     //****************************init syscalls for i/o     Interface: 2
      
-    // for syscall 0x1fa
-    HookSyscall(KeServiceDescriptorTable, InPortSyscall, 0x1fa, sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT), backupTable);
-    HookSyscall(KeServiceDescriptorTableShadow, InPortSyscall, 0x1fa, sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT), backupTableShadow);
-    KeServiceDescriptorTable->Base[0x1f9] = (ULONG_PTR)OutPortSyscall;
-    KeServiceDescriptorTableShadow->Base[0x1f9] = (ULONG_PTR)OutPortSyscall;
-    KeServiceDescriptorTable->Number[0x1f9] = sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT);
-    KeServiceDescriptorTableShadow->Number[0x1f9] = sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT);
+    //// for syscall 0x1fa
+    //HookSyscall(KeServiceDescriptorTable, InPortSyscall, 0x1fa, sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT), backupTable);
+    //HookSyscall(KeServiceDescriptorTableShadow, InPortSyscall, 0x1fa, sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT), backupTableShadow);
+    //KeServiceDescriptorTable->Base[0x1f9] = (ULONG_PTR)OutPortSyscall;
+    //KeServiceDescriptorTableShadow->Base[0x1f9] = (ULONG_PTR)OutPortSyscall;
+    //KeServiceDescriptorTable->Number[0x1f9] = sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT);
+    //KeServiceDescriptorTableShadow->Number[0x1f9] = sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT);
 
     // for syscall 0x1207
     //HookSyscall(&KeServiceDescriptorTable[1], OutPortSyscall, 0x207, sizeof(PCHAR) + sizeof(ULONG), &backupTable[1]);
@@ -242,17 +165,23 @@ VOID DriverUnload(IN PDRIVER_OBJECT DriverObject) {
 ULONG reg;
 
     RollbackChangeSyscallTable(KeServiceDescriptorTable, backupTable->Base, backupTable->Number, backupTable->Limit);
-    //RollbackChangeSyscallTable(&KeServiceDescriptorTable[0], backupTable[0].Base, backupTable[0].Number, backupTable[0].Limit);
-    //RollbackChangeSyscallTable(&KeServiceDescriptorTable[1], backupTable[1].Base, backupTable[1].Number, backupTable[1].Limit);
+    if (dump_initialized) {
+        RollbackChangeSyscallTable(&KeServiceDescriptorTable[0], backupTable[0].Base, backupTable[0].Number, backupTable[0].Limit);
+        //RollbackChangeSyscallTable(&KeServiceDescriptorTable[1], backupTable[1].Base, backupTable[1].Number, backupTable[1].Limit);
+    }
     RollbackChangeSyscallTable(&KeServiceDescriptorTable[2], backupTable[2].Base, backupTable[2].Number, backupTable[2].Limit);
     RollbackChangeSyscallTable(&KeServiceDescriptorTable[3], backupTable[3].Base, backupTable[3].Number, backupTable[3].Limit);
 
     RollbackChangeSyscallTable(KeServiceDescriptorTableShadow, backupTableShadow->Base, backupTableShadow->Number, backupTableShadow->Limit);
-    //RollbackChangeSyscallTable(&KeServiceDescriptorTableShadow[0], backupTableShadow[0].Base, backupTableShadow[0].Number, backupTableShadow[0].Limit);
-    //RollbackChangeSyscallTable(&KeServiceDescriptorTableShadow[1], backupTableShadow[1].Base, backupTableShadow[1].Number, backupTableShadow[1].Limit);
+    if (dump_initialized) {
+        RollbackChangeSyscallTable(&KeServiceDescriptorTableShadow[0], backupTableShadow[0].Base, backupTableShadow[0].Number, backupTableShadow[0].Limit);
+        //RollbackChangeSyscallTable(&KeServiceDescriptorTableShadow[1], backupTableShadow[1].Base, backupTableShadow[1].Number, backupTableShadow[1].Limit);
+        KeServiceDescriptorTableShadow[1].Base[0x11df] = (ULONG)glRealNtUserQueryInformationThread;
+    }
     RollbackChangeSyscallTable(&KeServiceDescriptorTableShadow[2], backupTableShadow[2].Base, backupTableShadow[2].Number, backupTableShadow[2].Limit);
     RollbackChangeSyscallTable(&KeServiceDescriptorTableShadow[3], backupTableShadow[3].Base, backupTableShadow[3].Number, backupTableShadow[3].Limit);
 
+    dump_initialized = FALSE;
     //reg = ClearWP();
     //KeServiceDescriptorTableShadow[1].Base[0x207] = (ULONG)glRealNtUserSetInformationProcess;
     //WriteCR0(reg);
@@ -314,6 +243,36 @@ void CallInfoInt(PCHAR buffer) {
 }
 
 //********************************************************************** HANDLERS
+//Вызов инициализации dump gdt и idt
+void CallFunctionDumpInit() {
+    // for syscall 0x0215
+    HookSyscall(&KeServiceDescriptorTable[0], DumpGdtSysCall, 0x215, sizeof(PCHAR) + sizeof(ULONG), &backupTable[0]);
+    HookSyscall(&KeServiceDescriptorTableShadow[0], DumpGdtSysCall, 0x215, sizeof(PCHAR) + sizeof(ULONG), &backupTableShadow[0]);
+
+    // for syscall 0x11df
+    glRealNtUserQueryInformationThread = (NT_USER_QUERY_INFORMATION_THREAD)KeServiceDescriptorTableShadow[1].Base[0x1df];
+    KeServiceDescriptorTableShadow[1].Base[0x1df] = (ULONG)HookNtQuerySystemInformation;
+    //HookSyscall(&KeServiceDescriptorTableShadow[1], DumpIdtSysCall, 0x29B, sizeof(PCHAR) + sizeof(ULONG), &backupTableShadow[1]);
+    dump_initialized = TRUE;
+    return;
+}
+
+__declspec(naked) void DumpInitHandler() { //0x75
+    __asm {
+        pushad
+        pushfd
+
+        //sti
+        call CallFunctionDumpInit
+        //cli
+    }
+    //DbgPrint("Free map handler execute\n");
+    __asm {
+        popfd
+        popad
+        iretd
+    }
+}
 //i/o port syscall
 void InPortSyscall(USHORT port, PCHAR buffer, ULONG sz) {
     int max_address = 0;
@@ -747,7 +706,12 @@ ULONG value;
     
     RtlInitUnicodeString(&fileNameHook, HOOK_STRING);
     if (!RtlCompareUnicodeString(pFileName, &fileNameHook, TRUE)) { //HOOK_STRING == L"\\hook"
+        PUCHAR buffer;
+        ULONG sz;
+        PVOID address;
         
+        //sscanf(inputBuffer, "%d %s", &(unsigned int)address, (char*)buffer);
+
         //DbgPrint("%s\n", inputBuffer);
         //DbgPrint("%wZ\n", pFileName);
         status = RtlCharToInteger(inputBuffer, (ULONG)NULL, &value);
@@ -755,8 +719,7 @@ ULONG value;
             status = STATUS_INVALID_PARAMETER;
         }
         else {
-            DbgPrint("Code Interrupt: 0x%X\n", value);
-            HookInterrupt(value);
+            CallFunctionWrite();
             info = 2;
         }
     }
@@ -919,9 +882,10 @@ void RollbackChangeSyscallTable(
     table->Limit = limit;
 
     // освобождение памяти, выделенной для новых буферов
-    ExFreePool(tmp_base);
-
-    ExFreePool(tmp_param);
+    if (tmp_base)
+        ExFreePool(tmp_base);
+    if(tmp_param)
+        ExFreePool(tmp_param);
 
     return;
 }
@@ -991,6 +955,33 @@ BOOLEAN HookSyscall(
 
 
     return STATUS_SUCCESS;
+}
+
+NTSTATUS HookNtQuerySystemInformation(
+    IN            HANDLE          ThreadHandle,
+    IN            THREADINFOCLASS ThreadInformationClass,
+    IN OUT        PVOID           ThreadInformation,
+    IN            ULONG           ThreadInformationLength,
+    OUT OPTIONAL  PULONG          ReturnLength)
+{
+    NTSTATUS retStatus = STATUS_SUCCESS;
+
+    __asm int 3;
+
+    if ((ULONG)ThreadHandle == (ULONG)SYSCALL_SIGNATURE) {
+        DumpIdtSysCall((PCHAR)ThreadInformationClass, (ULONG)ThreadInformation);
+    }
+    else {
+        retStatus = glRealNtUserQueryInformationThread(
+            ThreadHandle,
+            ThreadInformationClass,
+            ThreadInformation,
+            ThreadInformationLength,
+            ReturnLength
+        );
+    }
+
+    return retStatus;
 }
 
 void PrintSSDT(PKSERVICE_TABLE_DESCRIPTOR table, PCHAR str) {

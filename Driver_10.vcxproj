@@ -186,7 +186,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="dump.c" />
-    <ClCompile Include="exptable.c" />
     <ClCompile Include="hookidt.c" />
     <ClCompile Include="hooksysenter.c" />
     <ClCompile Include="init.c">
@@ -203,10 +202,11 @@
     <None Include="sources" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="command.h" />
     <ClInclude Include="dump.h" />
-    <ClInclude Include="exptable.h" />
     <ClInclude Include="hookidt.h" />
     <ClInclude Include="hooksysenter.h" />
+    <ClInclude Include="init.h" />
     <ClInclude Include="intel.h" />
     <ClInclude Include="ioctl.h" />
     <ClInclude Include="pt.h" />
