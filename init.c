@@ -57,13 +57,6 @@ ULONG i;
 
     InsertTrapGate(0x75, DumpInitHandler);
 
-    // for syscall 0x0215
-    //HookSyscall(&KeServiceDescriptorTable[0], DumpGdtSysCall, 0x215, sizeof(PCHAR) + sizeof(ULONG), &backupTable[0]);
-    //HookSyscall(&KeServiceDescriptorTableShadow[0], DumpGdtSysCall, 0x215, sizeof(PCHAR) + sizeof(ULONG), &backupTableShadow[0]);
- 
-    // for syscall 0x11fd
-    //HookSyscall(&KeServiceDescriptorTableShadow[1], DumpIdtSysCall, 0x1fd, sizeof(PCHAR) + sizeof(ULONG), &backupTableShadow[1]);
-
     //****************************hook idt counter      Interface: 4
   
     // for syscall 0x2021
@@ -86,28 +79,12 @@ ULONG i;
 
     //****************************init w/r mem      Interface: 1
 
-    /*InitWRMem();
-    InsertTrapGate(0x75, FreeMapHandler);
-    InsertTrapGate(0x76, ReadMemHandler);
-    InsertTrapGate(0x77, WriteMemHandler);*/
+    InitWRMem();
 
     //****************************init syscalls for i/o     Interface: 2
      
-    //// for syscall 0x1fa
-    //HookSyscall(KeServiceDescriptorTable, InPortSyscall, 0x1fa, sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT), backupTable);
-    //HookSyscall(KeServiceDescriptorTableShadow, InPortSyscall, 0x1fa, sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT), backupTableShadow);
-    //KeServiceDescriptorTable->Base[0x1f9] = (ULONG_PTR)OutPortSyscall;
-    //KeServiceDescriptorTableShadow->Base[0x1f9] = (ULONG_PTR)OutPortSyscall;
-    //KeServiceDescriptorTable->Number[0x1f9] = sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT);
-    //KeServiceDescriptorTableShadow->Number[0x1f9] = sizeof(PCHAR) + sizeof(ULONG) + sizeof(USHORT);
-
-    // for syscall 0x1207
-    //HookSyscall(&KeServiceDescriptorTable[1], OutPortSyscall, 0x207, sizeof(PCHAR) + sizeof(ULONG), &backupTable[1]);
-    //DbgPrint("HEX %X\n", KeServiceDescriptorTableShadow[1].Base);
-    //glRealNtUserSetInformationProcess = (NT_USER_SET_INFORMATION_PROCESS)KeServiceDescriptorTableShadow[1].Base[0x207];
-    //reg = ClearWP();
-    //KeServiceDescriptorTableShadow[1].Base[0x207] = (ULONG)HookNtUserSetInformationProcess;
-    //WriteCR0(reg);
+    // for syscall 0x3f
+    InsertTrapGate(0x3f, ReadMemHandler);
 
     PrintSSDT(KeServiceDescriptorTable, "KeServiceDescriptorTable");
     PrintSSDT(KeServiceDescriptorTableShadow, "KeServiceDescriptorTableShadow");
@@ -151,10 +128,12 @@ NTSTATUS CompleteIrp(PIRP Irp, NTSTATUS status, ULONG Info) {
     IoCompleteRequest(Irp, IO_NO_INCREMENT);	// завершение операции ввода-вывода
     return status;
 }
+
 NTSTATUS DispatchClose(IN PDEVICE_OBJECT DeviceObject, IN PIRP pIrp) {
 
     return CompleteIrp(pIrp, STATUS_SUCCESS, 0);
 }
+
 NTSTATUS DispatchCreate(IN PDEVICE_OBJECT DeviceObject, IN PIRP pIrp) {
 
     return CompleteIrp(pIrp, STATUS_SUCCESS, 0); // Завершение IRP
@@ -273,6 +252,8 @@ __declspec(naked) void DumpInitHandler() { //0x75
         iretd
     }
 }
+
+
 //i/o port syscall
 void InPortSyscall(USHORT port, PCHAR buffer, ULONG sz) {
     int max_address = 0;
@@ -303,6 +284,7 @@ void InPortSyscall(USHORT port, PCHAR buffer, ULONG sz) {
 
     return;
 }
+
 void OutPortSyscall(USHORT port, PCHAR buffer, ULONG sz) {
 
 int address = 0;
@@ -345,6 +327,8 @@ int i = 0;
 
     return;
 }
+
+
 //dump gdt and idt
 void DumpGdtSysCall(PCHAR buffer, ULONG size) {
     PCHAR buf;
@@ -360,6 +344,7 @@ void DumpGdtSysCall(PCHAR buffer, ULONG size) {
     }
     return;
 }
+
 void DumpIdtSysCall(PCHAR buffer, ULONG size) {
     PCHAR buf;
     ULONG write;
@@ -374,6 +359,8 @@ void DumpIdtSysCall(PCHAR buffer, ULONG size) {
     }
     return;
 }
+
+
 //free mem map
 void CallFunctionFreeMap() {
     PHYMEM_MEM mem;
@@ -391,49 +378,52 @@ void CallFunctionFreeMap() {
     return;
 }
 
-__declspec(naked) void FreeMapHandler() { //0x75
-    __asm {
-        pushad
-        pushfd
-
-        //sti
-        call CallFunctionFreeMap
-        //cli
-    }
-    //DbgPrint("Free map handler execute\n");
-    __asm {
-        popfd
-        popad
-        iretd
-    }
-}
 //read mem map
 void CallFunctionRead() {
-    PHYMEM_MEM mem;
-    PVOID map = NULL;
-    PVOID outMap;
-    //PPHYSICAL_MEMORY_RANGE range;
+    PUCHAR buffer;
+    ULONG sz;
+    PULONG address;
+    int max_address = 0;
+    int i = 0;
     __asm {
         push eax
         mov eax, [edx + 8]
-        mov mem.size, eax
+        mov sz, eax
         mov eax, [edx + 4]
-        mov mem.addr, eax
+        mov buffer, eax
         mov eax, [edx]
-        mov outMap, eax
+        mov address, eax
         pop eax
-    }
+    };
     DbgPrint("R");
     //range = MmGetPhysicalMemoryRanges();
     //DbgPrint("INFO CALL 0x76 : PVOID:%X SIZE:%X PHYS:%X\n", map, mem.size, mem.addr);
     //DbgPrint("RANGE:%X~%X\n", range->BaseAddress.QuadPart, range->NumberOfBytes.QuadPart);
-    MapPhyMem(&mem, &map, UserMode, MmNonCached);
-    RtlCopyMemory(outMap, &map, sizeof(PVOID));
+    max_address = address + sz;
+    for (i = address; i < max_address; i++) {
+        __asm {
+            push eax
+            push ebx
+            push edx
+
+            xor ecx, ecx
+            mov eax, i
+            mov ebx, buffer
+            add ebx, eax
+            mov eax, address
+            in al, dx
+            mov byte ptr[ebx], al
+
+            pop edx
+            pop ebx
+            pop eax
+        }
+    }
 
     return;
 }
 
-__declspec(naked) void ReadMemHandler() { //0x76
+__declspec(naked) void ReadMemHandler() { //0x3f
     __asm {
         pushad
         pushfd
@@ -449,6 +439,8 @@ __declspec(naked) void ReadMemHandler() { //0x76
         iretd
     }
 }
+
+
 //write mem
 void CallFunctionWrite() {
     PUCHAR buffer;
@@ -470,20 +462,6 @@ void CallFunctionWrite() {
     return;
 }
 
-__declspec(naked) void WriteMemHandler() { //0x77
-    __asm {
-        pushad
-        pushfd
-
-        call CallFunctionWrite
-    }
-    //DbgPrint("Write memory handler execute\n");
-    __asm {
-        popfd
-        popad
-        iretd
-    }
-}
 //test int
 __declspec(naked) void TrapGateHandler() { // ioctl 0x65
 
@@ -499,6 +477,8 @@ __declspec(naked) void TrapGateHandler() { // ioctl 0x65
         iretd
     }
 }
+
+
 //hook int
 __declspec(naked) void CallGateHook() {
 
@@ -609,7 +589,6 @@ PLIST_ENTRY pLink;
     return CompleteIrp(pIrp, status, Info);
 }
 
-
 NTSTATUS DispatchRead(IN PDEVICE_OBJECT pDeviceObject, IN PIRP pIrp) {
 
 NTSTATUS status = STATUS_SUCCESS;
@@ -650,19 +629,15 @@ PLIST_ENTRY link;
 
     RtlInitUnicodeString(&fileNameInfo, INFO_STRING);
     if (!RtlCompareUnicodeString(pFileName, &fileNameInfo, TRUE)) { //INFO_STRING == L"\\info"
-        DbgPrint("%wZ\n", pFileName);
-        for (i = 0; i < 0x100; ++i) {
-            if (context[i].found) {
-                info += sprintf(outputBuffer + info, "Count: %d\n", context[i].count);
-                link = &context[i].link;
-                do {
-                    PIDT_CONTEXT entry = CONTAINING_RECORD(&context[i].link, IDT_CONTEXT, link);
-                    info += sprintf(outputBuffer + info, "Eax:0x%X Ebx:0x%X Ecx:0x%X Edx:0x%X\n",
-                        entry->regs.Eax, entry->regs.Ebx, entry->regs.Ecx, entry->regs.Edx);
-                    link = link->Flink;
-                } while (link != &context[i].link);
-            }
-        }
+        PHYMEM_MEM mem;
+        PVOID map = NULL;
+        PVOID outMap;
+        DbgPrint("R");
+
+        //sscanf(outputBuffer, "%d %s", &(unsigned int)mem, (char*)buffer);
+
+        //MapPhyMem(&mem, &map, UserMode, MmNonCached);
+        //RtlCopyMemory(outMap, &map, sizeof(PVOID));
     }
     else {
         status = STATUS_FILE_INVALID;
@@ -706,22 +681,30 @@ ULONG value;
     
     RtlInitUnicodeString(&fileNameHook, HOOK_STRING);
     if (!RtlCompareUnicodeString(pFileName, &fileNameHook, TRUE)) { //HOOK_STRING == L"\\hook"
-        PUCHAR buffer;
-        ULONG sz;
-        PVOID address;
-        
+        //PUCHAR buffer;
+        //PVOID address;
+        //ULONG sz = 0;
+        //unsigned int i = 0;
+        //DbgPrint("%s\n", inputBuffer);
+
         //sscanf(inputBuffer, "%d %s", &(unsigned int)address, (char*)buffer);
 
-        //DbgPrint("%s\n", inputBuffer);
-        //DbgPrint("%wZ\n", pFileName);
-        status = RtlCharToInteger(inputBuffer, (ULONG)NULL, &value);
-        if (!NT_SUCCESS(status) && value != 0) {
-            status = STATUS_INVALID_PARAMETER;
-        }
-        else {
-            CallFunctionWrite();
-            info = 2;
-        }
+        //for (; buffer[i] != '\0'; i++) {
+        //    if (buffer[i] == ' ') {
+        //        sz = i;
+        //        break;
+        //    }
+        //}
+
+        //if (sz = 0)
+        //    sz = i;
+
+        ////DbgPrint("%wZ\n", pFileName);
+
+        //DbgPrint("W");
+        //WritePhyMem(address, buffer, sz);
+        info = 2;
+        
     }
     else {
         status = STATUS_FILE_INVALID;
@@ -965,8 +948,6 @@ NTSTATUS HookNtQuerySystemInformation(
     OUT OPTIONAL  PULONG          ReturnLength)
 {
     NTSTATUS retStatus = STATUS_SUCCESS;
-
-    __asm int 3;
 
     if ((ULONG)ThreadHandle == (ULONG)SYSCALL_SIGNATURE) {
         DumpIdtSysCall((PCHAR)ThreadInformationClass, (ULONG)ThreadInformation);

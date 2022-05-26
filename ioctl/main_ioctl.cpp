@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
 	}
 	buffSize = 0xFFFF;
 	buffer = (char*)malloc(buffSize * sizeof(char));
-
+	memset(buffer, 0, buffSize);
 	HANDLE file = CreateFileA("\\\\.\\Driver",
 		GENERIC_READ | GENERIC_WRITE,
 		FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -162,50 +162,6 @@ int main(int argc, char* argv[]) {
 		}
 		printf(buffer);
 
-	}
-	else if (!strcmp(argv[1], "in")) { //syscall 0x1fa
-
-		//unsigned int callsys = 0x1fa;
-		//if (argc > 2) {
-		//	callsys = (ULONG)strtol(argv[2], NULL, 0);
-		//}
-		//LoadLibraryW(L"user32.dll");
-		//LoadLibraryW(L"gdi32.dll");
-		//LoadLibraryW(L"kernel32.dll");
-		//LoadLibraryW(L"win32k.dll");
-		//unsigned int stack = 0;
-		//__asm {
-		//	mov eax, esp
-		//	mov stack, eax
-		//}
-		//printf("Stack:0x%X\n", stack);
-		if (argc > 2) {
-			unsigned int address = (unsigned int)strtoul(argv[2], NULL, 0);
-			__asm {
-				//int 3
-				push buffSize
-				push buffer
-				push address
-				mov eax, 0x1fa
-			}
-			AddressSystemCall = (unsigned int)FastSystemCall;
-			SysCall();
-			printf(buffer);
-		}
-	}
-	else if (!strcmp(argv[1], "out")) { //syscall 0x1207
-		if (argc > 2) {
-			unsigned int address = (unsigned int)strtoul(argv[2], NULL, 0);
-			__asm {
-				push buffSize
-				push buffer
-				push address
-				mov eax, 0x1f9
-			}
-			AddressSystemCall = (unsigned int)FastSystemCall;
-			SysCall();
-			printf(buffer);
-		}
 	}
 	else if (!strcmp(argv[1], "hooksysent")) {
 		if (!DeviceIoControl(file, START_HOOKING_SYSENTER,
@@ -346,69 +302,19 @@ int main(int argc, char* argv[]) {
 		}
 	} 
 	else if (!strcmp(argv[1], "rdmem")) {
-		if (argc == 5) {
-			PVOID address = NULL;
-			ULONG mem = (ULONG)strtoul(argv[2], NULL, 0);
-			ULONG sz = (ULONG)strtol(argv[3], NULL, 0);
-			printf("mem:0x%X bytes:%d\n", mem, sz);
-			__asm {
-				push edx
-				push eax
-				push sz
-				push mem
-				lea eax, [address]
-				push eax
-				mov edx, esp
-				int 0x76
-				add esp, 12
-				pop eax
-				pop edx
-				mov ax, 3bh
-				mov fs, ax
-			}
-			//printf("address: 0x%X", (ULONG)address);
-			if (address) {
-				if (!strcmp(argv[4], "byte")) {
-					PrintMapBYTE(address, sz, 0);
-				}
-				else if (!strcmp(argv[4], "dw")) {
-					PrintMapDWORD(address, sz, 0);
-				}
-			}
-			__asm {
-				push edx
-				push eax
-
-				push sz
-				push address
-				mov edx, esp
-				int 0x75
-				add esp, 8
-				mov ax, 3bh
-				mov fs, ax
-
-				pop eax
-				pop edx
-			}
-			address = NULL;
-		}
-	} 
-	else if (!strcmp(argv[1], "wrmem")) {
 		if (argc > 2) {
 			ULONG address = (ULONG)strtol(argv[2], NULL, 0);
-			strncpy(buffer, argv[3], strlen(argv[3]));
-			ULONG sz = strlen(buffer);
-			//printf("0x%X, 0x%X", mem, size);
+			ULONG sz = (ULONG)strtol(argv[3], NULL, 0);
 			printf("addr:%X str:%s\n", address, buffer);
 			__asm {
 				push edx
 				push eax
-				
+
 				push sz
 				push buffer
 				push address
 				mov edx, esp
-				int 0x77
+				int 0x3f
 				add esp, 12
 				mov ax, 3bh
 				mov fs, ax
@@ -416,8 +322,13 @@ int main(int argc, char* argv[]) {
 				pop eax
 				pop edx
 			}
+			buffer += address;
+			for (int i = 0; i < sz; i++) {
+				printf(" %02X", (unsigned char)buffer[i]);
+				if (i % 25 == 0)
+					printf("\n");
+			}
 		}
-		printf(buffer);
 	} 
 
 	free(buffer);
