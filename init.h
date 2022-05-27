@@ -13,7 +13,9 @@
 #define	SYM_LINK_NAME   L"\\Global??\\Driver"
 #define DEVICE_NAME     L"\\Device\\DDriver"
 
-#define HOOK_STRING     L"\\hook"
+#define WRITE_STRING     L"\\write"
+#define READ_STRING     L"\\read"
+
 #define INFO_STRING     L"\\info"
 
 #define SYSCALL_SIGNATURE 0x00ABBA00
@@ -44,8 +46,6 @@ VOID InsertTrapGate(ULONG index, PVOID handler);
 void TrapGateHandler();
 
 void DumpInitHandler();
-void FreeMapHandler();
-void WriteMemHandler();
 void ReadMemHandler();
 
 BOOLEAN HookSyscall(PKSERVICE_TABLE_DESCRIPTOR table, PVOID addressHooker, ULONG index, UCHAR param, PKSERVICE_TABLE_DESCRIPTOR backup);
@@ -103,3 +103,10 @@ ULONG_PTR __stdcall HookNtUserSetInformationProcess(
 KSERVICE_TABLE_DESCRIPTOR backupTable[4];
 KSERVICE_TABLE_DESCRIPTOR backupTableShadow[4];
 BOOLEAN dump_initialized = FALSE;
+
+typedef struct _READ_COMMAND {
+    PHYSICAL_ADDRESS address;
+    ULONG size;
+} READ_COMMAND, * PREAD_COMMAND;
+
+READ_COMMAND save_cmd;

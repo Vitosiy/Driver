@@ -581,6 +581,76 @@ PLIST_ENTRY pLink;
             RtlCopyMemory(out, "OK", strlen("OK"));
             break;
 
+        case SYSCALL_CNT_INFO_IOCTL:
+            Info += sprintf(out + Info, "Current coutner value: %d\n", glNumberSysServices);
+            //DbgPrint("Current coutner value: %d\n", glNumberSysServices);
+            Info += sprintf(out + Info, "Last: %d\n", glLastSC);
+            //DbgPrint("Last: %d\n", glLastSC);
+            for (i = 0; i < glNumberSysServices; ++i) {
+                Info += sprintf(out + Info, "%d: %u\n", i, glSyscallEaxs[i]);
+                //DbgPrint("%d: %u\n", i, glSyscallEaxs[i]);
+            }
+            break;
+
+        case SYSCALL_ALL_INFO_IOCTL:
+            DbgPrint("SYSCALL_ALL_INFO_IOCTL\n");
+            DbgPrint("%s\n", in);
+            status = RtlCharToInteger(in, (ULONG)NULL, &value);
+            if (!NT_SUCCESS(status)) {
+                status = STATUS_INVALID_PARAMETER;
+                break;
+            }
+            else if (value) {
+                for (i = 0; i < glNumberSysServices; ++i) {
+                    count = 0;
+                    if (pContextSyscalls[i].b) {
+                        for (pLink = pContextSyscalls[i].link.Flink; pLink != &pContextSyscalls[i].link && count < value; pLink = pLink->Flink) {
+                            PCONTEXT_SYSCALL entry = CONTAINING_RECORD(pLink, CONTEXT_SYSCALL, link);
+                            Info += sprintf(out + Info, "Index:%d", entry->index);
+                            if (pContextSyscalls[i].argBuffer.size) {
+                                Info += sprintf(out + Info, " Args:\t");
+                                for (j = 0; j < entry->argBuffer.size / sizeof(ULONG); ++j) {
+                                    Info += sprintf(out + Info, "[%d]:0x%X ", j, entry->argBuffer.buffer[j]);
+                                }
+                            }
+                            Info += sprintf(out + Info, "\tStack:0x%X\n", (ULONG)entry->userStack);
+                            pLink = pLink->Flink;
+                            count++;
+                        }
+                    }
+                }
+            }
+            break;
+
+        case SYSCALL_IND_INFO_IOCTL:
+            DbgPrint("SYSCALL_IND_INFO_IOCTL\n");
+            status = RtlCharToInteger(in, (ULONG)NULL, &value);
+
+            DbgPrint("%s %d\n", in, value);
+            if (!NT_SUCCESS(status) || value > glNumberSysServices) {
+                status = STATUS_INVALID_PARAMETER;
+                break;
+            }
+            else if (pContextSyscalls[value].b) {
+                PCONTEXT_SYSCALL entry = CONTAINING_RECORD(&pContextSyscalls[value].link, CONTEXT_SYSCALL, link);
+                Info += sprintf(out + Info, "Index:%d~0x%X\t", entry->index, entry->index);
+                DbgPrint("Index:%d~0x%X", entry->index, entry->index);
+                if (entry->argBuffer.size) {
+                    Info += sprintf(out + Info, "\tArgs: ");
+                    DbgPrint("\tArgs: ");
+                    for (j = 0; j < entry->argBuffer.size / sizeof(ULONG); ++j) {
+                        Info += sprintf(out + Info, "[%d]:0x%X ", j, entry->argBuffer.buffer[j]);
+                        DbgPrint("[%d]:0x%X ", j, entry->argBuffer.buffer[j]);
+                    }
+                }
+                Info += sprintf(out + Info, "\tStack:0x%X\n", (ULONG)entry->userStack);
+            }
+            else {
+                Info = sprintf(out, "Empty syscall context\n");
+            }
+            break;
+
+
         default:
             status = STATUS_INVALID_PARAMETER;
             break;
@@ -629,15 +699,18 @@ PLIST_ENTRY link;
 
     RtlInitUnicodeString(&fileNameInfo, INFO_STRING);
     if (!RtlCompareUnicodeString(pFileName, &fileNameInfo, TRUE)) { //INFO_STRING == L"\\info"
-        PHYMEM_MEM mem;
-        PVOID map = NULL;
-        PVOID outMap;
-        DbgPrint("R");
+        PVOID pvk;
+        ULONG i = 0;
 
-        //sscanf(outputBuffer, "%d %s", &(unsigned int)mem, (char*)buffer);
+        pvk = MmMapIoSpace(save_cmd.address, save_cmd.size, MmNonCached);
 
-        //MapPhyMem(&mem, &map, UserMode, MmNonCached);
-        //RtlCopyMemory(outMap, &map, sizeof(PVOID));
+        if (pvk && (*pReadLength >= save_cmd.size)) {
+            for (; i < save_cmd.size; i++) {
+                info += sprintf(outputBuffer + info, "%02X", (UCHAR)*((PUCHAR)pvk+i));
+            }
+            //RtlCopyMemory(outputBuffer, pvk, save_cmd.size);
+        }
+        MmUnmapIoSpace(pvk, save_cmd.size);
     }
     else {
         status = STATUS_FILE_INVALID;
@@ -654,12 +727,13 @@ NTSTATUS status = STATUS_SUCCESS;
 ULONG info = 0;
 PIO_STACK_LOCATION pIrpStack;
 PUNICODE_STRING pFileName;
-UNICODE_STRING fileNameHook;
+UNICODE_STRING fileNameHook1;
+UNICODE_STRING fileNameHook2;
 PWCHAR pStr;
 PCHAR inputBuffer;
 ULONG value;
 
-    DbgPrint("\nCallWrite\n");
+    DbgPrint("\nCallRead&Write\n");
     pIrpStack = IoGetCurrentIrpStackLocation(pIrp);
     pFileName = &pIrpStack->FileObject->FileName;
 
@@ -670,41 +744,76 @@ ULONG value;
         inputBuffer = (PCHAR)pIrp->UserBuffer;
     }
     
-    fileNameHook.Length = sizeof(HOOK_STRING) + 2;
-    fileNameHook.MaximumLength = fileNameHook.Length;
-    pStr = (PWCH)ExAllocatePoolWithTag(PagedPool, fileNameHook.Length, 'oneN');
+    fileNameHook1.Length = sizeof(WRITE_STRING) + 2;
+    fileNameHook1.MaximumLength = fileNameHook1.Length;
+    pStr = (PWCH)ExAllocatePoolWithTag(PagedPool, fileNameHook1.Length, 'oneN');
     if (!pStr) {
         return CompleteIrp(pIrp, STATUS_MEMORY_NOT_ALLOCATED, 0);
     }
-    fileNameHook.Buffer = pStr;
+    fileNameHook1.Buffer = pStr;
+
+    fileNameHook2.Length = sizeof(READ_STRING) + 2;
+    fileNameHook2.MaximumLength = fileNameHook2.Length;
+    pStr = (PWCH)ExAllocatePoolWithTag(PagedPool, fileNameHook2.Length, 'oneN');
+    if (!pStr) {
+        return CompleteIrp(pIrp, STATUS_MEMORY_NOT_ALLOCATED, 0);
+    }
+    fileNameHook2.Buffer = pStr;
     
     
-    RtlInitUnicodeString(&fileNameHook, HOOK_STRING);
-    if (!RtlCompareUnicodeString(pFileName, &fileNameHook, TRUE)) { //HOOK_STRING == L"\\hook"
-        //PUCHAR buffer;
-        //PVOID address;
-        //ULONG sz = 0;
-        //unsigned int i = 0;
-        //DbgPrint("%s\n", inputBuffer);
+    RtlInitUnicodeString(&fileNameHook1, WRITE_STRING);
+    RtlInitUnicodeString(&fileNameHook2, READ_STRING);
 
-        //sscanf(inputBuffer, "%d %s", &(unsigned int)address, (char*)buffer);
+    if (!RtlCompareUnicodeString(pFileName, &fileNameHook1, TRUE)) { //HOOK_STRING == L"\\write"
+        ULONG address;
+        PUCHAR buffer;
+        ULONG sz = 0;
+        unsigned int i = 0;
 
-        //for (; buffer[i] != '\0'; i++) {
-        //    if (buffer[i] == ' ') {
-        //        sz = i;
-        //        break;
-        //    }
-        //}
+        DbgPrint("%s\n", inputBuffer);
 
-        //if (sz = 0)
-        //    sz = i;
+        for (; inputBuffer[i] != '\0'; i++) {
+            if (inputBuffer[i] == ' ') {
+                inputBuffer[i] = "\0";
+                buffer = inputBuffer + i + 1;
+                break;
+            }
+        }
 
-        ////DbgPrint("%wZ\n", pFileName);
+        RtlCharToInteger(inputBuffer, (ULONG)NULL, &address);
 
-        //DbgPrint("W");
-        //WritePhyMem(address, buffer, sz);
-        info = 2;
+        i = 0;
+        for (; buffer[i] != '\0'; i++) {
+            sz++;
+        }
+
+        DbgPrint("W");
+        WritePhyMem((PVOID)address, buffer, sz);
+        info = sz;
+    }
+    else if (!RtlCompareUnicodeString(pFileName, &fileNameHook2, TRUE)) { //HOOK_STRING == L"\\read"
+        ULONG address;
+        PUCHAR adr_sz;
+        ULONG sz;
+        unsigned int i = 0;
+
+        DbgPrint("%s\n", inputBuffer);
+
+        for (; inputBuffer[i] != '\0'; i++) {
+            if (inputBuffer[i] == ' ') {
+                inputBuffer[i] = "\0";
+                adr_sz = inputBuffer + i + 1;
+                break;
+            }
+        }
+
+        RtlCharToInteger(inputBuffer, (ULONG)NULL, &address);
+        RtlCharToInteger(adr_sz, (ULONG)NULL, &sz);
         
+        save_cmd.address.QuadPart = (ULONGLONG)address;
+        save_cmd.size = sz;
+
+        info = sz;
     }
     else {
         status = STATUS_FILE_INVALID;
